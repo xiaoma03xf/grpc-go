@@ -115,7 +115,7 @@ func (dcs *defaultConfigSelector) SelectConfig(rpcInfo iresolver.RPCInfo) (*ires
 		MethodConfig: getMethodConfig(dcs.sc, rpcInfo.Method),
 	}, nil
 }
-
+ 
 // NewClient creates a new gRPC "channel" for the target URI provided.  No I/O
 // is performed.  Use of the ClientConn for RPCs will automatically cause it to
 // connect.  The Connect method may be called to manually create a connection,
@@ -614,18 +614,22 @@ type ClientConn struct {
 	cancel context.CancelFunc // Cancelled on close.
 
 	// The following are initialized at dial time, and are read-only after that.
-	target              string            // User's dial target.
-	parsedTarget        resolver.Target   // See initParsedTargetAndResolverBuilder().
-	authority           string            // See initAuthority().
-	dopts               dialOptions       // Default and user specified dial options.
-	channelz            *channelz.Channel // Channelz object.
-	resolverBuilder     resolver.Builder  // See initParsedTargetAndResolverBuilder().
-	idlenessMgr         *idle.Manager
-	metricsRecorderList *stats.MetricsRecorderList
+	// dial 时配置，之后只读
+	target              string // 用户传给 Dial 的目标地址/名字，例如 "dns:///example.com"
+	parsedTarget        resolver.Target
+	authority           string                     // 用于 HTTP/2 :authority 或 TLS SNI、认证等
+	dopts               dialOptions                // Dial 时的选项（timeout、credentials、backoff、负载均衡策略等）
+	channelz            *channelz.Channel          // 用于 telemetry/tracing 的内部可观测对象
+	resolverBuilder     resolver.Builder           // 用来创建 name resolver（DNS、xds 等）
+	idlenessMgr         *idle.Manager              // 空闲超时管理，决定何时进入 idle（节省资源）
+	metricsRecorderList *stats.MetricsRecorderList // RPC 统计/度量收集器列表
 
 	// The following provide their own synchronization, and therefore don't
 	// require cc.mu to be held to access them.
-	csMgr              *connectivityStateManager
+	// 管理 gRPC 连接的状态机（IDLE, CONNECTING, READY, TRANSIENT_FAILURE, SHUTDOWN）
+	// 协调状态更新和通知。是整个 ClientConn 状态感知的核心。
+	csMgr *connectivityStateManager
+	// 连接选择器
 	pickerWrapper      *pickerWrapper
 	safeConfigSelector iresolver.SafeConfigSelector
 	retryThrottler     atomic.Value // Updated from service config.
@@ -633,9 +637,10 @@ type ClientConn struct {
 	// mu protects the following fields.
 	// TODO: split mu so the same mutex isn't used for everything.
 	mu              sync.RWMutex
-	resolverWrapper *ccResolverWrapper         // Always recreated whenever entering idle to simplify Close.
-	balancerWrapper *ccBalancerWrapper         // Always recreated whenever entering idle to simplify Close.
-	sc              *ServiceConfig             // Latest service config received from the resolver.
+	resolverWrapper *ccResolverWrapper // Always recreated whenever entering idle to simplify Close.
+	balancerWrapper *ccBalancerWrapper // Always recreated whenever entering idle to simplify Close.
+	sc              *ServiceConfig     // Latest service config received from the resolver.
+	// 连接池
 	conns           map[*addrConn]struct{}     // Set to nil on close.
 	keepaliveParams keepalive.ClientParameters // May be updated upon receipt of a GoAway.
 	// firstResolveEvent is used to track whether the name resolver sent us at

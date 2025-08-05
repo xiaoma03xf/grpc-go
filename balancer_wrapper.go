@@ -63,6 +63,7 @@ type ccBalancerWrapper struct {
 	internal.EnforceClientConnEmbedding
 	// The following fields are initialized when the wrapper is created and are
 	// read-only afterwards, and therefore can be accessed without a mutex.
+	// 指向所属的 clientConn
 	cc               *ClientConn
 	opts             balancer.BuildOptions
 	serializer       *grpcsync.CallbackSerializer
@@ -71,7 +72,9 @@ type ccBalancerWrapper struct {
 	// The following fields are only accessed within the serializer or during
 	// initialization.
 	curBalancerName string
-	balancer        *gracefulswitch.Balancer
+
+	// 负载均衡器
+	balancer *gracefulswitch.Balancer
 
 	// The following field is protected by mu.  Caller must take cc.mu before
 	// taking mu.
